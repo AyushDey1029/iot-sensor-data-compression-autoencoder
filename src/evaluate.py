@@ -3,9 +3,13 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import torch.nn as nn
 
-from src.model import Autoencoder
+try:
+    # Works when running from project root (e.g., python main.py).
+    from src.model import Autoencoder
+except ModuleNotFoundError:
+    # Works when running this file directly (e.g., python src/evaluate.py).
+    from model import Autoencoder
 
 
 PROCESSED_DIR = Path("data/processed")
@@ -22,7 +26,7 @@ def load_test_data() -> np.ndarray:
 
 
 def evaluate_model(plot_samples: int = 50) -> float:
-    """Evaluate reconstruction MSE and save optional comparison plot."""
+    """Evaluate reconstruction quality and save optional comparison plot."""
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     if not MODEL_PATH.exists():
@@ -35,13 +39,24 @@ def evaluate_model(plot_samples: int = 50) -> float:
     model.eval()
 
     x_test = torch.tensor(x_test_np, dtype=torch.float32).to(device)
-    criterion = nn.MSELoss()
 
     with torch.no_grad():
         reconstructed = model(x_test)
-        mse = criterion(reconstructed, x_test).item()
+        # Global reconstruction error over all samples and features.
+        error = ((x_test - reconstructed) ** 2).mean()
+        mse = error.item()
 
-    print(f"Final reconstruction error (MSE): {mse:.6f}")
+        # Accuracy-like score requested: higher is better, lower error -> higher accuracy.
+        reconstruction_accuracy = 1 - error.item()
+
+        # Per-sample reconstruction error for threshold-based accuracy.
+        sample_error = ((x_test - reconstructed) ** 2).mean(dim=1)
+        threshold = 0.01
+        accuracy_threshold = (sample_error < threshold).float().mean().item() * 100
+
+    print(f"Reconstruction Error (MSE): {mse:.6f}")
+    print(f"Reconstruction Accuracy: {reconstruction_accuracy * 100:.2f}%")
+    print(f"Threshold Accuracy (error < {threshold}): {accuracy_threshold:.2f}%")
     plot_original_vs_reconstructed(
         x_test.cpu().numpy(),
         reconstructed.cpu().numpy(),
@@ -69,3 +84,7 @@ def plot_original_vs_reconstructed(
     plt.tight_layout()
     plt.savefig(save_path)
     plt.close()
+
+
+if __name__ == "__main__":
+    evaluate_model()
