@@ -16,6 +16,7 @@ except ModuleNotFoundError:
 PROCESSED_DIR = Path("data/processed")
 MODEL_PATH = Path("models/autoencoder.pth")
 OUTPUT_DIR = Path("outputs")
+THRESHOLD_PATH = OUTPUT_DIR / "best_threshold.txt"
 
 
 class LegacyAutoencoder(torch.nn.Module):
@@ -80,6 +81,7 @@ def evaluate_model(plot_samples: int = 50) -> float:
         "Threshold Accuracy "
         f"(best threshold={best_threshold:.4f}): {best_threshold_accuracy:.2f}%"
     )
+    save_best_threshold(best_threshold)
 
     plot_error_histogram(sample_error.cpu().numpy(), OUTPUT_DIR / "reconstruction_error_hist.png")
     plot_original_vs_reconstructed(
@@ -156,6 +158,12 @@ def plot_error_histogram(sample_error: np.ndarray, save_path: Path) -> None:
     plt.tight_layout()
     plt.savefig(save_path)
     plt.close()
+
+
+def save_best_threshold(threshold: float) -> None:
+    """Persist the best threshold so other tools (e.g., Streamlit app) can reuse it."""
+    with open(THRESHOLD_PATH, "w", encoding="utf-8") as f:
+        f.write(f"{threshold:.8f}\n")
 
 
 if __name__ == "__main__":
