@@ -75,7 +75,7 @@ def load_model(device: torch.device) -> torch.nn.Module:
     if not MODEL_PATH.exists():
         raise FileNotFoundError(f"Model not found: {MODEL_PATH}")
 
-    state_dict = torch.load(MODEL_PATH, map_location=device)
+    state_dict = torch.load(MODEL_PATH, map_location=device, weights_only=True)
     try:
         model = Autoencoder(input_dim=6, hidden_dims=[4, 2]).to(device)
         model.load_state_dict(state_dict)
