@@ -5,3 +5,6 @@ torch
 matplotlib
 openpyxl
 streamlit
+fastapi
+uvicorn[standard]
+python-multipart

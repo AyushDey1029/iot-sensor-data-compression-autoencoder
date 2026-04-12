@@ -17,6 +17,40 @@ THRESHOLD_PATH = Path("outputs/best_threshold.txt")
 MAX_TABLE_ROWS = 5000
 
 
+def inject_custom_css() -> None:
+    """Small CSS tweaks for readability and visual balance."""
+    st.markdown(
+        """
+        <style>
+        .st-emotion-cache-37a399, .st-emotion-cache-1p09rwb {
+            color: black;
+        }
+
+        .block-container {
+            padding-top: 1.2rem;
+            padding-bottom: 1.2rem;
+        }
+        div[data-testid="stMetric"] {
+            background: #f6f8fa;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 0.7rem 0.9rem;
+        }
+        div[data-testid="stDataFrame"] div[role="grid"] {
+            font-size: 0.98rem;
+        }
+        .section-card {
+            background: #fafafa;
+            border: 1px solid #ececec;
+            border-radius: 10px;
+            padding: 0.7rem 1rem 0.25rem 1rem;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 class LegacyAutoencoder(torch.nn.Module):
     """Fallback model for older checkpoints saved with 6->3->6 architecture."""
 
@@ -101,7 +135,7 @@ def run_inference(df_features: pd.DataFrame, model: torch.nn.Module, scaler) -> 
 
 def plot_original_vs_reconstructed(original: np.ndarray, reconstructed: np.ndarray, feature_idx: int):
     """Plot selected feature values before and after reconstruction."""
-    fig, ax = plt.subplots(figsize=(10, 4))
+    fig, ax = plt.subplots(figsize=(8, 4))
     ax.plot(original[:, feature_idx], label=f"Original ({FEATURE_COLUMNS[feature_idx]})")
     ax.plot(
         reconstructed[:, feature_idx],
@@ -118,7 +152,7 @@ def plot_original_vs_reconstructed(original: np.ndarray, reconstructed: np.ndarr
 
 def plot_reconstruction_error(sample_error: np.ndarray):
     """Plot reconstruction error per sample."""
-    fig, ax = plt.subplots(figsize=(10, 4))
+    fig, ax = plt.subplots(figsize=(8, 4))
     ax.plot(sample_error, color="tab:red")
     ax.set_title("Reconstruction Error per Sample")
     ax.set_xlabel("Sample")
@@ -129,7 +163,7 @@ def plot_reconstruction_error(sample_error: np.ndarray):
 
 def show_limited_dataframe(title: str, df: pd.DataFrame, max_rows: int = MAX_TABLE_ROWS) -> None:
     """Render a safe-sized table to avoid Streamlit memory issues on huge datasets."""
-    st.subheader(title)
+    st.markdown(f"### {title}")
     total_rows = len(df)
     if total_rows == 0:
         st.info("No rows to display.")
@@ -141,15 +175,22 @@ def show_limited_dataframe(title: str, df: pd.DataFrame, max_rows: int = MAX_TAB
             f"Displaying first {rows_to_show:,} of {total_rows:,} rows "
             f"to prevent browser memory issues."
         )
-    st.dataframe(df.head(rows_to_show), use_container_width=True)
+    st.dataframe(df.head(rows_to_show), height=300, use_container_width=True)
 
 
 def main() -> None:
     st.set_page_config(page_title="IoT Autoencoder Anomaly Detector", layout="wide")
+    inject_custom_css()
     st.title("IoT Autoencoder - Reconstruction and Anomaly Detection")
     st.caption("Upload new sensor data to reconstruct signals and detect anomalies.")
+    st.write("")
 
-    uploaded_file = st.file_uploader("Upload IoT Data", type=["csv", "xlsx", "xls"])
+    with st.container():
+        st.markdown('<div class="section-card">', unsafe_allow_html=True)
+        st.markdown("### Upload")
+        uploaded_file = st.file_uploader("Upload IoT Data", type=["csv", "xlsx", "xls"])
+        st.markdown("</div>", unsafe_allow_html=True)
+
     if uploaded_file is None:
         st.info(
             "Please upload a CSV or Excel file with columns: "
@@ -158,19 +199,26 @@ def main() -> None:
         return
 
     try:
-        # Reuse the same file-loading rules as preprocessing (CSV/XLS/XLSX).
-        raw_df = load_data(uploaded_file, uploaded_file.name)
-        feature_df = clean_dataset(raw_df)
-        model = load_model()
-        scaler = load_scaler()
-        result_df = run_inference(feature_df, model, scaler)
+        with st.spinner("Processing data and running reconstruction..."):
+            # Reuse the same file-loading rules as preprocessing (CSV/XLS/XLSX).
+            raw_df = load_data(uploaded_file, uploaded_file.name)
+            feature_df = clean_dataset(raw_df)
+            model = load_model()
+            scaler = load_scaler()
+            result_df = run_inference(feature_df, model, scaler)
     except Exception as exc:
         st.error(str(exc))
         st.error(f"Required columns: {FEATURE_COLUMNS}")
         return
 
-    st.subheader("Uploaded Data Preview")
-    st.dataframe(raw_df.head(20), use_container_width=True)
+    st.write("")
+    with st.container():
+        st.markdown("### Data Preview")
+        show_full_preview = st.checkbox("Show full uploaded dataset", value=False)
+        preview_df = raw_df if show_full_preview else raw_df.head(10)
+        if not show_full_preview and len(raw_df) > 10:
+            st.caption("Showing first 10 rows. Enable checkbox to view all rows.")
+        st.dataframe(preview_df, height=300, use_container_width=True)
 
     sample_error = result_df["reconstruction_error"].to_numpy()
     mse = result_df.attrs["mse"]
@@ -178,32 +226,41 @@ def main() -> None:
     anomaly_pct = float((result_df["label"] == "Anomaly").mean() * 100)
     avg_error = float(sample_error.mean())
 
-    st.subheader("Summary")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Average Error (MSE)", f"{avg_error:.6f}")
-    col2.metric("Reconstruction Accuracy", f"{max(0.0, 1 - mse) * 100:.2f}%")
-    col3.metric("Anomalies", f"{anomaly_pct:.2f}%")
-    st.write(f"Using threshold: `{threshold:.6f}`")
+    st.write("")
+    with st.container():
+        st.markdown("### Summary Metrics")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("MSE", f"{avg_error:.6f}")
+        col2.metric("Reconstruction Accuracy", f"{max(0.0, 1 - mse) * 100:.2f}%")
+        col3.metric("Anomaly %", f"{anomaly_pct:.2f}%")
+        st.caption(f"Threshold in use: {threshold:.6f}")
 
-    st.subheader("Visualization")
-    feature_name = st.selectbox("Feature for comparison plot", FEATURE_COLUMNS, index=0)
-    feature_idx = FEATURE_COLUMNS.index(feature_name)
-    st.pyplot(
-        plot_original_vs_reconstructed(
-            result_df.attrs["scaled_original"],
-            result_df.attrs["scaled_reconstructed"],
-            feature_idx,
-        )
-    )
-    st.pyplot(plot_reconstruction_error(sample_error))
+    st.write("")
+    with st.container():
+        st.markdown("### Visualizations")
+        show_plots = st.toggle("Show plots", value=True)
+        if show_plots:
+            feature_name = st.selectbox("Feature for comparison plot", FEATURE_COLUMNS, index=0)
+            feature_idx = FEATURE_COLUMNS.index(feature_name)
+            st.pyplot(
+                plot_original_vs_reconstructed(
+                    result_df.attrs["scaled_original"],
+                    result_df.attrs["scaled_reconstructed"],
+                    feature_idx,
+                ),
+                use_container_width=True,
+            )
+            st.pyplot(plot_reconstruction_error(sample_error), use_container_width=True)
 
     anomalies = result_df[result_df["label"] == "Anomaly"]
+    st.write("")
     if anomalies.empty:
-        st.subheader("Anomaly Rows")
+        st.markdown("### Anomaly Rows")
         st.success("No anomalies found with the current threshold.")
     else:
         show_limited_dataframe("Anomaly Rows", anomalies)
 
+    st.write("")
     show_limited_dataframe("All Scored Rows", result_df)
 
     # Provide full results as a download instead of rendering massive tables in browser.
